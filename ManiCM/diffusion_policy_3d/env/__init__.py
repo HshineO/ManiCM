@@ -1,7 +1,8 @@
 
-from .adroit import AdroitEnv
-from .dexart import DexArtEnv
-from .metaworld import MetaWorldEnv
+# from .adroit import AdroitEnv
+# from .dexart import DexArtEnv
+# from .metaworld import MetaWorldEnv
+from .robomimic import robomimic_image_wrapper
 
 
 

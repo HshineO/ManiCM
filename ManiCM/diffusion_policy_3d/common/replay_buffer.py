@@ -6,7 +6,6 @@ import zarr
 import numcodecs
 import numpy as np
 from functools import cached_property
-from termcolor import cprint
 
 def check_chunks_compatible(chunks: tuple, shape: tuple):
     assert len(shape) == len(chunks)
@@ -170,6 +169,7 @@ class ReplayBuffer:
             for key in keys:
                 arr = src_root['data'][key]
                 data[key] = arr[:]
+
             root = {
                 'meta': meta,
                 'data': data
@@ -203,9 +203,6 @@ class ReplayBuffer:
                         chunks=cks, compressor=cpr, if_exists=if_exists
                     )
         buffer = cls(root=root)
-        for key, value in buffer.items():
-            cprint(f'Replay Buffer: {key}, shape {value.shape}, dtype {value.dtype}, range {value.min():.2f}~{value.max():.2f}', 'green')
-        cprint("--------------------------", 'green')
         return buffer
     
     @classmethod
