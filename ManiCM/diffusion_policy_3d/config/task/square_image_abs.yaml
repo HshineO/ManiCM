@@ -21,7 +21,7 @@ shape_meta: &shape_meta
 
 task_name: &task_name square
 dataset_type: &dataset_type ph
-dataset_path: &dataset_path /home/clear/consistency-policy-sjq/dataset/image_abs.hdf5 # /media/clear/HP ZHAN SSD/robomimic/datasets/${task.task_name}/${task.dataset_type}/image_abs.hdf5
+dataset_path: &dataset_path /mnt/home/SongJiaqi/Data/robomimic/square_abs/image_abs.hdf5 # /media/clear/HP ZHAN SSD/robomimic/datasets/${task.task_name}/${task.dataset_type}/image_abs.hdf5
 abs_action: &abs_action True
 
 #past_action_visible: True
@@ -34,7 +34,7 @@ env_runner:
   n_train_vis: 0
   train_start_idx: 0
   n_test: 50
-  n_test_vis: 0
+  n_test_vis: 50
   test_start_seed: 100000
   max_steps: 250
   n_obs_steps: ${n_obs_steps}
