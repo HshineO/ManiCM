@@ -87,14 +87,14 @@ ema:
 
 dataloader:
   batch_size: 4096 #128
-  num_workers: 100 #32
+  num_workers: 40 #32
   shuffle: True
   pin_memory: True
   persistent_workers: False
 
 val_dataloader:
   batch_size: 4096 #128
-  num_workers: 100 #32
+  num_workers: 40 #32
   shuffle: False
   pin_memory: True
   persistent_workers: False
@@ -132,7 +132,7 @@ logging:
   mode: online
   name: DPTeacher # ${exp_name}
   project: ManiCM-DPTeacher
-  resume: true
+  resume: False
   tags:
   - manicm 
   - robomimic
@@ -142,7 +142,7 @@ checkpoint:
   topk:
     monitor_key: test_mean_score
     mode: max
-    k: 1
+    k: 8 #1
     format_str: 'epoch={epoch:04d}-test_mean_score={test_mean_score:.3f}.ckpt'
   save_last_ckpt: True # this only saves when save_ckpt is True
   save_last_snapshot: False

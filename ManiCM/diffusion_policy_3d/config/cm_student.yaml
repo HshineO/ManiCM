@@ -15,7 +15,9 @@ dataset_obs_steps: ${n_obs_steps}
 keypoint_visible_rate: 1.0
 obs_as_global_cond: Trued
 use_consistency_model: True
+past_action_visible: False
 
+teacher_ckpt: /mnt/home/SongJiaqi/Documents/ManiCM/ManiCM/outputs/dp_teacher/square/checkpoints/epoch=0700-test_mean_score=0.740.ckpt
 policy:
   _target_: diffusion_policy_3d.policy.DP_Teacher.DP_Teacher
   # use_point_crop: true
@@ -26,16 +28,28 @@ policy:
   
   diffusion_step_embed_dim: 128
   down_dims: [256,512,1024]
-  crop_shape: [76, 76]
-  # crop_shape:
-  # - 80
-  # - 80
-  encoder_output_dim: 64
+  # crop_shape: [76,76]
+  # encoder_output_dim: 64
   horizon: ${horizon}
   kernel_size: 5
   n_action_steps: ${n_action_steps}
   n_groups: 8
   n_obs_steps: ${n_obs_steps}
+
+  obs_encoder:
+    _target_: diffusion_policy_3d.model.vision.multi_image_obs_encoder.MultiImageObsEncoder
+    shape_meta: ${shape_meta}
+    rgb_model:
+      _target_: diffusion_policy_3d.model.vision.model_getter.get_resnet
+      name: resnet18
+      weights: null
+    resize_shape: null
+    crop_shape: [76, 76]
+    # constant center crop
+    random_crop: True
+    use_group_norm: True
+    share_rgb_model: False
+    imagenet_norm: False
 
   noise_scheduler:
     _target_: diffusers.schedulers.scheduling_ddim.DDIMScheduler
@@ -59,8 +73,8 @@ policy:
     steps_offset: 0
     prediction_type: sample
 
-  num_inference_timesteps: 1
-  num_inference_steps: 10
+  num_inference_timesteps: 1 # The inference steps of ManiCM.
+  num_inference_steps: 10 # DDIM steps
   obs_as_global_cond: true
   shape_meta: ${shape_meta}
 
@@ -85,18 +99,20 @@ ema:
   max_value: 0.9999
 
 dataloader:
-  batch_size: 4096
-  num_workers: 100
+  batch_size: 128 #4096
+  num_workers: 8 #100
   shuffle: True
   pin_memory: True
   persistent_workers: False
 
 val_dataloader:
-  batch_size: 4096
-  num_workers: 100
+  batch_size: 128 # 4096
+  num_workers: 8 #100
   shuffle: False
   pin_memory: True
   persistent_workers: False
+
+output_dir: /mnt/home/SongJiaqi/Documents/ManiCM/ManiCM/outputs/cm_student/square #outputs/dp_teacher/square
 
 optimizer:
   _target_: torch.optim.AdamW
@@ -112,13 +128,13 @@ training:
   resume: True
   lr_scheduler: cosine
   lr_warmup_steps: 500
-  num_epochs: 3000
+  num_epochs: 3000 # 3000
   gradient_accumulate_every: 1
   use_ema: True
-  rollout_every: 200
-  checkpoint_every: 200
-  val_every: 1
-  sample_every: 5
+  rollout_every: 50 #200
+  checkpoint_every: 50 #200
+  val_every: 50 #1
+  sample_every: 50 #5
   max_train_steps: null
   max_val_steps: null
   tqdm_interval_sec: 1.0
@@ -129,9 +145,9 @@ logging:
   group: ${exp_name}
   id: null
   mode: online
-  name: ${exp_name}
+  name: CMStudent-bz128
   project: ManiCM-CMStudent
-  resume: true
+  resume: False
   tags:
   - manicm
   - robomimic
@@ -141,7 +157,7 @@ checkpoint:
   topk:
     monitor_key: test_mean_score
     mode: max
-    k: 1
+    k: 5
     format_str: 'epoch={epoch:04d}-test_mean_score={test_mean_score:.3f}.ckpt'
   save_last_ckpt: True # this only saves when save_ckpt is True
   save_last_snapshot: False

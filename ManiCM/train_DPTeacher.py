@@ -325,7 +325,7 @@ class TrainDPTeacherWorkspace:
                     topk_ckpt_path = topk_manager.get_ckpt_path(metric_dict)
 
                     if topk_ckpt_path is not None:
-                        self.save_checkpoint()
+                        self.save_checkpoint(path = topk_ckpt_path)
                 # ========= eval end for this epoch ==========
                 policy.train()
 
@@ -337,6 +337,20 @@ class TrainDPTeacherWorkspace:
                 self.epoch += 1
                 del step_log
 
+    def load_payload(self, payload, exclude_keys=None, include_keys=None, **kwargs):
+        if exclude_keys is None:
+            exclude_keys = tuple()
+        if include_keys is None:
+            include_keys = payload['pickles'].keys()
+            # 这意味着默认情况下,将恢复所有被序列化为 pickle 的对象。
+
+        for key, value in payload['state_dicts'].items():
+            if key not in exclude_keys:
+                self.__dict__[key].load_state_dict(value, **kwargs)
+        for key in include_keys:
+            if key in payload['pickles']:
+                self.__dict__[key] = dill.loads(payload['pickles'][key])
+
     def eval(self):
         # load the latest checkpoint
         
@@ -346,12 +360,17 @@ class TrainDPTeacherWorkspace:
         if lastest_ckpt_path.is_file():
             cprint(f"Resuming from checkpoint {lastest_ckpt_path}", 'magenta')
             self.load_checkpoint(path=lastest_ckpt_path)
-        
+
+        payload = torch.load(open(lastest_ckpt_path, 'rb'), pickle_module=dill)
+        self.load_payload(payload, exclude_keys=None, include_keys=None)
+    
+
         # configure env
         env_runner: BaseImageRunner
         env_runner = hydra.utils.instantiate(
             cfg.task.env_runner,
             output_dir=self.output_dir)
+        print(type(env_runner))
         assert isinstance(env_runner, BaseImageRunner)
         policy = self.model
         if cfg.training.use_ema:

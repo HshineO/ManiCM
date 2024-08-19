@@ -13,7 +13,7 @@ import torch
 import dill
 from omegaconf import OmegaConf
 import pathlib
-from train import TrainDP3Workspace
+from train_DPTeacher import TrainDPTeacherWorkspace
 
 OmegaConf.register_new_resolver("eval", eval, replace=True)
     
@@ -24,7 +24,11 @@ OmegaConf.register_new_resolver("eval", eval, replace=True)
         'diffusion_policy_3d', 'config'))
 )
 def main(cfg):
-    workspace = TrainDP3Workspace(cfg)
+
+    cfg.policy.num_inference_steps = 100  # DDIM steps
+    # print(cfg.env_runner)
+
+    workspace = TrainDPTeacherWorkspace(cfg,output_dir=cfg.output_dir)
     workspace.eval()
 
 if __name__ == "__main__":
