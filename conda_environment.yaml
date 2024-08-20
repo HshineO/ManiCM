@@ -68,7 +68,7 @@ dependencies:
   - dbus=1.13.6=h5008d03_3
   - debugpy=1.8.0=py39h3d6467e_1
   - decorator=5.1.1=pyhd8ed1ab_0
-  - diffusers=0.11.1=pyhd8ed1ab_0
+  # - diffusers=0.11.1=pyhd8ed1ab_0
   - dill=0.3.5.1=pyhd8ed1ab_0
   - docker-pycreds=0.4.0=py_0
   - einops=0.4.1=pyhd8ed1ab_0
@@ -389,6 +389,7 @@ dependencies:
       - dm-control==1.0.9
       - dm-env==1.6
       - dm-tree==0.1.8
+      - diffusers==0.24.0
       - egl-probe==1.0.2
       - etils==1.5.2
       - fasteners==0.15
@@ -409,7 +410,7 @@ dependencies:
       - monotonic==1.6
       - mujoco==3.0.0
       - multiprocess==0.70.13
-      - numba==0.53.1
+      - numba==0.56.4
       - nvidia-ml-py==12.535.133
       - opencensus==0.11.3
       - opencensus-context==0.1.3

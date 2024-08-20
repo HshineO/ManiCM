@@ -91,15 +91,15 @@ ema:
   max_value: 0.9999
 
 dataloader:
-  batch_size: 4096 #128
-  num_workers: 64
+  batch_size: 2048 #128
+  num_workers: 20 #64
   shuffle: True
   pin_memory: True
   persistent_workers: True #False
 
 val_dataloader:
-  batch_size: 4096 #128
-  num_workers: 64
+  batch_size: 2048 #128
+  num_workers: 20 #64
   shuffle: False
   pin_memory: True
   persistent_workers: True #False
@@ -125,6 +125,7 @@ training:
   checkpoint_every: 50 #50 #200
   val_every: 50 #1
   sample_every: 50 #5
+  val_sample_every: 50
   max_train_steps: null
   max_val_steps: null
   tqdm_interval_sec: 1.0
@@ -143,12 +144,12 @@ logging:
   - robomimic
 
 checkpoint:
-  save_ckpt: True # if True, save checkpoint every checkpoint_every
+  save_ckpt: False #True # if True, save checkpoint every checkpoint_every
   topk:
-    monitor_key: test_mean_score
-    mode: max
+    monitor_key: val_mse_error # test_mean_score
+    mode: min #max
     k: 8 #1
-    format_str: 'epoch={epoch:04d}-test_mean_score={test_mean_score:.3f}.ckpt'
+    format_str: 'epoch={epoch:04d}-val_mse_error={test_mean_score:.3f}.ckpt'
   save_last_ckpt: True # this only saves when save_ckpt is True
   save_last_snapshot: False
 

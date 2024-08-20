@@ -1,5 +1,12 @@
 # ManiCM
 
+## environment
+```bash
+$ mamba env create -f conda_environment.yaml
+$ conda activate consistency-policy
+```
+
+
 ## train Teacher Model
 choose GPU number in `train_DPTeacher.sh`
 ```bash
