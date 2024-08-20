@@ -235,7 +235,7 @@ class RobomimicImageRunner(BaseImageRunner):
         self.abs_action = abs_action
         self.tqdm_interval_sec = tqdm_interval_sec
 
-    def run(self, policy: BaseImagePolicy):
+    def run(self, policy: BaseImagePolicy,use_consistency_model = False):
         device = policy.device
         dtype = policy.dtype
         env = self.env
@@ -291,7 +291,7 @@ class RobomimicImageRunner(BaseImageRunner):
 
                 # run policy
                 with torch.no_grad():
-                    action_dict = policy.predict_action(obs_dict)
+                    action_dict = policy.predict_action(obs_dict,use_consistency_model = use_consistency_model)
 
                 # device_transfer
                 np_action_dict = dict_apply(action_dict,

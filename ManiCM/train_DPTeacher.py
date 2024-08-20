@@ -80,7 +80,7 @@ class TrainDPTeacherWorkspace:
             cfg.training.checkpoint_every = 1
             cfg.training.val_every = 1
             cfg.training.sample_every = 1
-            RUN_ROLLOUT = True
+            RUN_ROLLOUT = False #True
             RUN_CKPT = False
             verbose = True
         else:

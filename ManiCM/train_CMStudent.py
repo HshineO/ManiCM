@@ -113,7 +113,7 @@ class DDIMSolver:
         x_prev = alpha_cumprod_prev.sqrt() * pred_x0 + dir_xt
         return x_prev
 
-class TrainDP3Workspace:
+class TrainStudentWorkspace:
     include_keys = ['global_step', 'epoch']
     exclude_keys = tuple()
 
@@ -169,10 +169,10 @@ class TrainDP3Workspace:
         
         # resume training
         if cfg.training.resume:
-            lastest_ckpt_path =  pathlib.Path(cfg.teacher_ckpt) # self.get_checkpoint_path()
+            lastest_ckpt_path = pathlib.Path(cfg.teacher_ckpt) # self.get_checkpoint_path()
             if lastest_ckpt_path.is_file():
                 print(f"Resuming from checkpoint {lastest_ckpt_path}")
-                self.load_checkpoint(path=lastest_ckpt_path)
+                self.load_checkpoint(path=lastest_ckpt_path,exclude_keys=['_output_dir'])
         else:
             raise ValueError(f"Training Must Have A Teacher Model !!!!!")
 
@@ -247,6 +247,9 @@ class TrainDP3Workspace:
                     // cfg.training.gradient_accumulate_every
         )
 
+
+        self._output_dir = cfg.output_dir
+
         # configure env
         env_runner: BaseImageRunner
         env_runner = hydra.utils.instantiate(
@@ -279,8 +282,11 @@ class TrainDP3Workspace:
         wandb.config.update(
             {
                 "output_dir": self.output_dir,
-            }
+            },
+            # allow_val_change=True
         )
+
+        
 
         # configure checkpoint
         topk_manager = TopKCheckpointManager(
@@ -294,277 +300,280 @@ class TrainDP3Workspace:
         
         # training loop
         log_path = os.path.join(self.output_dir, 'logs.json.txt')
-        for local_epoch_idx in range(cfg.training.num_epochs):
-            step_log = dict()
-            # ========= train for this epoch ==========
-            train_losses = list()
-            with tqdm.tqdm(train_dataloader, desc=f"Training epoch {self.epoch}", 
-                    leave=False, mininterval=cfg.training.tqdm_interval_sec) as tepoch:
-                for batch_idx, batch in enumerate(tepoch):
-                    
-                    batch = dict_apply(batch, lambda x: x.to(device, non_blocking=True))
-                    if train_sampling_batch is None:
-                        train_sampling_batch = batch
-                    # normalize input
-                    nobs = normalizer.normalize(batch['obs'])
-                    nactions = normalizer['action'].normalize(batch['action'])
+        with JsonLogger(log_path) as json_logger:
+            for local_epoch_idx in range(cfg.training.num_epochs):
+                step_log = dict()
+                # ========= train for this epoch ==========
+                train_losses = list()
+                with tqdm.tqdm(train_dataloader, desc=f"Training epoch {self.epoch}", 
+                        leave=False, mininterval=cfg.training.tqdm_interval_sec) as tepoch:
+                    for batch_idx, batch in enumerate(tepoch):
+                        
+                        batch = dict_apply(batch, lambda x: x.to(device, non_blocking=True))
+                        if train_sampling_batch is None:
+                            train_sampling_batch = batch
+                        # normalize input
+                        nobs = normalizer.normalize(batch['obs'])
+                        nactions = normalizer['action'].normalize(batch['action'])
 
-                    # if not self.model.use_pc_color:
-                    #     nobs['point_cloud'] = nobs['point_cloud'][..., :3]
-                    
-                    batch_size = nactions.shape[0]
-                    horizon = nactions.shape[1]
+                        # if not self.model.use_pc_color:
+                        #     nobs['point_cloud'] = nobs['point_cloud'][..., :3]
+                        
+                        batch_size = nactions.shape[0]
+                        horizon = nactions.shape[1]
 
-                    # handle different ways of passing observation
-                    local_cond = None
-                    global_cond = None
-                    # attn_global_cond = None
-                    trajectory = nactions
-                    cond_data = trajectory
-                    
-                    if self.model.obs_as_global_cond:
-                        # reshape B, T, ... to B*T
-                        # [batch_size * n_bos_steps, 512, 3], [batch_size * n_bos_steps, 24]
-                        this_nobs = dict_apply(nobs, 
-                            lambda x: x[:,:self.model.n_obs_steps,...].reshape(-1,*x.shape[2:]))
-                        nobs_features = encoder(this_nobs)
-                        # output_dim = nobs_features.shape[1]
-                        # attn_nobs_features = nobs_features.reshape(-1, self.model.n_obs_steps, output_dim)
-                        # attn_nobs_features = self.model.condition_attention(attn_nobs_features, attn_nobs_features).reshape(-1, output_dim)
+                        # handle different ways of passing observation
+                        local_cond = None
+                        global_cond = None
+                        # attn_global_cond = None
+                        trajectory = nactions
+                        cond_data = trajectory
+                        
+                        if self.model.obs_as_global_cond:
+                            # reshape B, T, ... to B*T
+                            # [batch_size * n_bos_steps, 512, 3], [batch_size * n_bos_steps, 24]
+                            this_nobs = dict_apply(nobs, 
+                                lambda x: x[:,:self.model.n_obs_steps,...].reshape(-1,*x.shape[2:]))
+                            nobs_features = encoder(this_nobs)
+                            # output_dim = nobs_features.shape[1]
+                            # attn_nobs_features = nobs_features.reshape(-1, self.model.n_obs_steps, output_dim)
+                            # attn_nobs_features = self.model.condition_attention(attn_nobs_features, attn_nobs_features).reshape(-1, output_dim)
 
-                        if "cross_attention" in self.model.condition_type:
-                            # treat as a sequence
-                            global_cond = nobs_features.reshape(batch_size, self.model.n_obs_steps, -1)
-                        else:
-                            # reshape back to B, Do
-                            global_cond = nobs_features.reshape(batch_size, -1)
-                            # attn_global_cond = attn_nobs_features.reshape(batch_size, -1)
-                        # # this_n_point_cloud = this_nobs['imagin_robot'].reshape(batch_size,-1, *this_nobs['imagin_robot'].shape[1:])
-                        # this_n_point_cloud = this_nobs['point_cloud'].reshape(batch_size,-1, *this_nobs['point_cloud'].shape[1:])
-                        # this_n_point_cloud = this_n_point_cloud[..., :3]
+                            if "cross_attention" in self.model.condition_type:
+                                # treat as a sequence
+                                global_cond = nobs_features.reshape(batch_size, self.model.n_obs_steps, -1)
+                            else:
+                                # reshape back to B, Do
+                                global_cond = nobs_features.reshape(batch_size, -1)
+                                # attn_global_cond = attn_nobs_features.reshape(batch_size, -1)
+                            # # this_n_point_cloud = this_nobs['imagin_robot'].reshape(batch_size,-1, *this_nobs['imagin_robot'].shape[1:])
+                            # this_n_point_cloud = this_nobs['point_cloud'].reshape(batch_size,-1, *this_nobs['point_cloud'].shape[1:])
+                            # this_n_point_cloud = this_n_point_cloud[..., :3]
 
-                        trajectory = cond_data.detach()
+                            trajectory = cond_data.detach()
 
-                    noise = torch.randn(trajectory.shape, device=trajectory.device)
-    
-                    latents = trajectory
+                        noise = torch.randn(trajectory.shape, device=trajectory.device)
+        
+                        latents = trajectory
 
-                    # Sample a random timestep for each image t_n ~ U[0, N - k - 1] without bias.
-                    topk = noise_scheduler.config.num_train_timesteps // cfg.policy.num_inference_steps
-                    index = torch.randint(0, cfg.policy.num_inference_steps, (batch_size,), device=device).long()
-                    start_timesteps = solver.ddim_timesteps[index]
-                    timesteps = start_timesteps - topk
-                    timesteps = torch.where(timesteps < 0, torch.zeros_like(timesteps), timesteps)
+                        # Sample a random timestep for each image t_n ~ U[0, N - k - 1] without bias.
+                        topk = noise_scheduler.config.num_train_timesteps // cfg.policy.num_inference_steps
+                        index = torch.randint(0, cfg.policy.num_inference_steps, (batch_size,), device=device).long()
+                        start_timesteps = solver.ddim_timesteps[index]
+                        timesteps = start_timesteps - topk
+                        timesteps = torch.where(timesteps < 0, torch.zeros_like(timesteps), timesteps)
 
-                    # 20.4.4. Get boundary scalings for start_timesteps and (end) timesteps.
-                    c_skip_start, c_out_start = scalings_for_boundary_conditions(start_timesteps)
-                    c_skip_start, c_out_start = [append_dims(x, latents.ndim) for x in [c_skip_start, c_out_start]]
-                    c_skip, c_out = scalings_for_boundary_conditions(timesteps)
-                    c_skip, c_out = [append_dims(x, latents.ndim) for x in [c_skip, c_out]]
+                        # 20.4.4. Get boundary scalings for start_timesteps and (end) timesteps.
+                        c_skip_start, c_out_start = scalings_for_boundary_conditions(start_timesteps)
+                        c_skip_start, c_out_start = [append_dims(x, latents.ndim) for x in [c_skip_start, c_out_start]]
+                        c_skip, c_out = scalings_for_boundary_conditions(timesteps)
+                        c_skip, c_out = [append_dims(x, latents.ndim) for x in [c_skip, c_out]]
 
-                    noisy_model_input = noise_scheduler.add_noise(latents, noise, start_timesteps)
+                        noisy_model_input = noise_scheduler.add_noise(latents, noise, start_timesteps)
 
-                    noise_pred = unet(
-                        sample=noisy_model_input, 
-                        timestep=start_timesteps, 
-                        local_cond=local_cond, 
-                        global_cond=global_cond)
-
-                    pred_x_0 = predicted_origin(
-                        noise_pred,
-                        start_timesteps,
-                        noisy_model_input,
-                        noise_scheduler.config.prediction_type,
-                        alpha_schedule,
-                        sigma_schedule)
-                    
-                    model_pred = c_skip_start * noisy_model_input + c_out_start * pred_x_0
-
-                    with torch.no_grad():
-                        cond_teacher_output = teacher_unet(
+                        noise_pred = unet(
                             sample=noisy_model_input, 
                             timestep=start_timesteps, 
                             local_cond=local_cond, 
                             global_cond=global_cond)
-                        
-                        cond_pred_x0 = predicted_origin(
-                            cond_teacher_output,
+
+                        pred_x_0 = predicted_origin(
+                            noise_pred,
                             start_timesteps,
                             noisy_model_input,
                             noise_scheduler.config.prediction_type,
                             alpha_schedule,
                             sigma_schedule)
                         
-                        x_prev = solver.ddim_step(cond_pred_x0, cond_teacher_output, index)
+                        model_pred = c_skip_start * noisy_model_input + c_out_start * pred_x_0
+
+                        with torch.no_grad():
+                            cond_teacher_output = teacher_unet(
+                                sample=noisy_model_input, 
+                                timestep=start_timesteps, 
+                                local_cond=local_cond, 
+                                global_cond=global_cond)
+                            
+                            cond_pred_x0 = predicted_origin(
+                                cond_teacher_output,
+                                start_timesteps,
+                                noisy_model_input,
+                                noise_scheduler.config.prediction_type,
+                                alpha_schedule,
+                                sigma_schedule)
+                            
+                            x_prev = solver.ddim_step(cond_pred_x0, cond_teacher_output, index)
+                            
+                        with torch.no_grad():
+                            target_noise_pred = target_unet(
+                                x_prev.float(),
+                                timesteps,
+                                local_cond=local_cond, 
+                                global_cond=global_cond)
+                            pred_x_0 = predicted_origin(
+                                target_noise_pred,
+                                timesteps,
+                                x_prev,
+                                noise_scheduler.config.prediction_type,
+                                alpha_schedule,
+                                sigma_schedule)
+                            target = c_skip * x_prev + c_out * pred_x_0
+
+                        model_pred_mean = model_pred.mean()
+                        target_mean = target.mean()
+                        loss = F.mse_loss(model_pred.float(), target.float(), reduction="mean")
+
+                        loss.backward()
+                        torch.nn.utils.clip_grad_norm_(unet.parameters(), cfg.training.max_grad_norm)
+                        optimizer.step()
+                        lr_scheduler.step()
+                        optimizer.zero_grad(set_to_none=True)
+                        update_ema(target_unet.parameters(), unet.parameters(), cfg.training.ema_decay)
                         
+                        # logging
+                        raw_loss_cpu = loss.item()
+                        tepoch.set_postfix(loss=raw_loss_cpu, refresh=False)
+                        train_losses.append(raw_loss_cpu)
+                        step_log = {
+                            'train_loss': raw_loss_cpu,
+                            'global_step': self.global_step,
+                            'epoch': self.epoch,
+                            'lr': lr_scheduler.get_last_lr()[0]
+                        }
+                        loss_dict = {'bc_loss': loss.item()}
+                        step_log.update(loss_dict)
+                        json_logger.log(step_log)
+
+
+                # at the end of each epoch
+                # replace train_loss with epoch average
+                train_loss = np.mean(train_losses)
+                step_log['train_loss'] = train_loss
+
+                
+                # ========= eval for this epoch ==========
+                policy = self.model
+                policy.eval()
+
+                # run rollout
+                if (self.epoch % cfg.training.rollout_every) == 0 and RUN_ROLLOUT and env_runner is not None:
+                    t3 = time.time()
+                    # runner_log = env_runner.run(policy, dataset=dataset)
+                    runner_log = env_runner.run(policy, use_consistency_model=self.cfg.use_consistency_model)
+                    t4 = time.time()
+                    # print(f"rollout time: {t4-t3:.3f}")
+                    # log all
+                    step_log.update(runner_log)
+                    
+                # run validation
+                t_time = 0
+                count = 0
+                if (self.epoch % cfg.training.val_every) == 0 and RUN_VALIDATION:
                     with torch.no_grad():
-                        target_noise_pred = target_unet(
-                            x_prev.float(),
-                            timesteps,
-                            local_cond=local_cond, 
-                            global_cond=global_cond)
-                        pred_x_0 = predicted_origin(
-                            target_noise_pred,
-                            timesteps,
-                            x_prev,
-                            noise_scheduler.config.prediction_type,
-                            alpha_schedule,
-                            sigma_schedule)
-                        target = c_skip * x_prev + c_out * pred_x_0
+                        val_losses = list()
+                        val_mse_error = list()
+                        with tqdm.tqdm(val_dataloader, desc=f"Validation epoch {self.epoch}", 
+                                leave=False, mininterval=cfg.training.tqdm_interval_sec) as tepoch:
+                            for batch_idx, batch in enumerate(tepoch):
+                                batch = dict_apply(batch, lambda x: x.to(device, non_blocking=True))
+                                loss, loss_dict = self.model.compute_loss(batch)
+                                if (self.epoch % cfg.training.val_sample_every) == 0: # 每多少个epoch进行一次验证集的采样验证，生成action计算mse
+                                    obs_dict = batch['obs']
+                                    gt_action = batch['action']
 
-                    model_pred_mean = model_pred.mean()
-                    target_mean = target.mean()
-                    loss = F.mse_loss(model_pred.float(), target.float(), reduction="mean")
+                                            
+                                    start_time = time.time()
+                                    result = policy.predict_action(obs_dict)
+                                    t = time.time() - start_time
 
-                    loss.backward()
-                    torch.nn.utils.clip_grad_norm_(unet.parameters(), cfg.training.max_grad_norm)
-                    optimizer.step()
-                    lr_scheduler.step()
-                    optimizer.zero_grad(set_to_none=True)
-                    update_ema(target_unet.parameters(), unet.parameters(), cfg.training.ema_decay)
-                    
-                    # logging
-                    raw_loss_cpu = loss.item()
-                    tepoch.set_postfix(loss=raw_loss_cpu, refresh=False)
-                    train_losses.append(raw_loss_cpu)
-                    step_log = {
-                        'train_loss': raw_loss_cpu,
-                        'global_step': self.global_step,
-                        'epoch': self.epoch,
-                        'lr': lr_scheduler.get_last_lr()[0]
-                    }
-                    loss_dict = {'bc_loss': loss.item()}
-                    step_log.update(loss_dict)
+                                    t_time += t
+                                    count += 1
+                                            
+
+                                    pred_action = result['action_pred']
+                                    mse = torch.nn.functional.mse_loss(pred_action, gt_action)
 
 
-            # at the end of each epoch
-            # replace train_loss with epoch average
-            train_loss = np.mean(train_losses)
-            step_log['train_loss'] = train_loss
-
-            
-            # ========= eval for this epoch ==========
-            policy = self.model
-            policy.eval()
-
-            # run rollout
-            if (self.epoch % cfg.training.rollout_every) == 0 and RUN_ROLLOUT and env_runner is not None:
-                t3 = time.time()
-                # runner_log = env_runner.run(policy, dataset=dataset)
-                runner_log = env_runner.run(policy, use_consistency_model=self.cfg.use_consistency_model)
-                t4 = time.time()
-                # print(f"rollout time: {t4-t3:.3f}")
-                # log all
-                step_log.update(runner_log)
-                
-            # run validation
-            t_time = 0
-            count = 0
-            if (self.epoch % cfg.training.val_every) == 0 and RUN_VALIDATION:
-                with torch.no_grad():
-                    val_losses = list()
-                    val_mse_error = list()
-                    with tqdm.tqdm(val_dataloader, desc=f"Validation epoch {self.epoch}", 
-                            leave=False, mininterval=cfg.training.tqdm_interval_sec) as tepoch:
-                        for batch_idx, batch in enumerate(tepoch):
-                            batch = dict_apply(batch, lambda x: x.to(device, non_blocking=True))
-                            loss, loss_dict = self.model.compute_loss(batch)
-                            if (self.epoch % cfg.training.val_sample_every) == 0: # 每多少个epoch进行一次验证集的采样验证，生成action计算mse
-                                obs_dict = batch['obs']
-                                gt_action = batch['action']
-
+                                    val_losses.append(loss)
+                                    val_mse_error.append(mse.item())
+                                    del obs_dict
+                                    del gt_action
+                                    del result
+                                    del pred_action
+                                    del mse
                                         
-                                start_time = time.time()
-                                result = policy.predict_action(obs_dict)
-                                t = time.time() - start_time
+                                if (cfg.training.max_val_steps is not None) \
+                                    and batch_idx >= (cfg.training.max_val_steps-1):
+                                    break
+                        if len(val_losses) > 0:
+                            val_loss = torch.mean(torch.tensor(val_losses)).item()
+                            # log epoch average validation loss
+                            step_log['val_loss'] = val_loss
+                        if len(val_mse_error) > 0:
+                            val_mse_error = torch.mean(torch.tensor(val_mse_error)).item()
+                            step_log['val_mse_error'] = val_mse_error
 
-                                t_time += t
-                                count += 1
-                                        
-
-                                pred_action = result['action_pred']
-                                mse = torch.nn.functional.mse_loss(pred_action, gt_action)
-
-
-                                val_losses.append(loss)
-                                val_mse_error.append(mse.item())
-                                del obs_dict
-                                del gt_action
-                                del result
-                                del pred_action
-                                del mse
-                                    
-                            if (cfg.training.max_val_steps is not None) \
-                                and batch_idx >= (cfg.training.max_val_steps-1):
-                                break
-                    if len(val_losses) > 0:
-                        val_loss = torch.mean(torch.tensor(val_losses)).item()
-                        # log epoch average validation loss
-                        step_log['val_loss'] = val_loss
-                    if len(val_mse_error) > 0:
-                        val_mse_error = torch.mean(torch.tensor(val_mse_error)).item()
-                        step_log['val_mse_error'] = val_mse_error
-
-                        val_avg_inference_time = t_time / count
-                        step_log['val_avg_inference_time'] = val_avg_inference_time
+                            val_avg_inference_time = t_time / count
+                            step_log['val_avg_inference_time'] = val_avg_inference_time
 
 
-            
-            # run diffusion sampling on a training batch
-            t_time = 0
-            count = 0
-            if (self.epoch % cfg.training.sample_every) == 0:
-                with torch.no_grad():
-                    # sample trajectory from training set, and evaluate difference
-                    batch = dict_apply(train_sampling_batch, lambda x: x.to(device, non_blocking=True))
-                    obs_dict = batch['obs']
-                    gt_action = batch['action']
+                
+                # run diffusion sampling on a training batch
+                t_time = 0
+                count = 0
+                if (self.epoch % cfg.training.sample_every) == 0:
+                    with torch.no_grad():
+                        # sample trajectory from training set, and evaluate difference
+                        batch = dict_apply(train_sampling_batch, lambda x: x.to(device, non_blocking=True))
+                        obs_dict = batch['obs']
+                        gt_action = batch['action']
+                        
+                        result = policy.predict_action(obs_dict, True)
+                        pred_action = result['action_pred']
+                        mse = torch.nn.functional.mse_loss(pred_action, gt_action)
+                        step_log['train_action_mse_error'] = mse.item()
+                        del batch
+                        del obs_dict
+                        del gt_action
+                        del result
+                        del pred_action
+                        del mse
+
+                if env_runner is None:
+                    step_log['test_mean_score'] = - train_loss
                     
-                    result = policy.predict_action(obs_dict, True)
-                    pred_action = result['action_pred']
-                    mse = torch.nn.functional.mse_loss(pred_action, gt_action)
-                    step_log['train_action_mse_error'] = mse.item()
-                    del batch
-                    del obs_dict
-                    del gt_action
-                    del result
-                    del pred_action
-                    del mse
+                # checkpoint
+                if (self.epoch % cfg.training.checkpoint_every) == 0 and cfg.checkpoint.save_ckpt:
+                    # checkpointing
+                    if cfg.checkpoint.save_last_ckpt:
+                        self.save_checkpoint()
+                    if cfg.checkpoint.save_last_snapshot:
+                        self.save_snapshot()
 
-            if env_runner is None:
-                step_log['test_mean_score'] = - train_loss
+                    # sanitize metric names
+                    metric_dict = dict()
+                    for key, value in step_log.items():
+                        new_key = key.replace('/', '_')
+                        metric_dict[new_key] = value
+                    
+                    # We can't copy the last checkpoint here
+                    # since save_checkpoint uses threads.
+                    # therefore at this point the file might have been empty!
+                    topk_ckpt_path = topk_manager.get_ckpt_path(metric_dict)
+
+                    if topk_ckpt_path is not None:
+                        self.save_checkpoint(path=topk_ckpt_path)
+                # ========= eval end for this epoch ==========
+                policy.train()
                 
-            # checkpoint
-            if (self.epoch % cfg.training.checkpoint_every) == 0 and cfg.checkpoint.save_ckpt:
-                # checkpointing
-                if cfg.checkpoint.save_last_ckpt:
-                    self.save_checkpoint()
-                if cfg.checkpoint.save_last_snapshot:
-                    self.save_snapshot()
 
-                # sanitize metric names
-                metric_dict = dict()
-                for key, value in step_log.items():
-                    new_key = key.replace('/', '_')
-                    metric_dict[new_key] = value
-                
-                # We can't copy the last checkpoint here
-                # since save_checkpoint uses threads.
-                # therefore at this point the file might have been empty!
-                topk_ckpt_path = topk_manager.get_ckpt_path(metric_dict)
-
-                if topk_ckpt_path is not None:
-                    self.save_checkpoint(path=topk_ckpt_path)
-            # ========= eval end for this epoch ==========
-            policy.train()
-            
-
-            # end of epoch
-            # log of last step is combined with validation and rollout
-            wandb_run.log(step_log, step=self.global_step)
-            self.global_step += 1
-            self.epoch += 1
-            del step_log
+                # end of epoch
+                # log of last step is combined with validation and rollout
+                wandb_run.log(step_log, step=self.global_step)
+                json_logger.log(step_log)
+                self.global_step += 1
+                self.epoch += 1
+                del step_log
 
     def eval(self):
         # load the latest checkpoint
@@ -746,7 +755,7 @@ def _copy_to_cpu(x):
         'diffusion_policy_3d', 'config'))
 )
 def main(cfg):
-    workspace = TrainDP3Workspace(cfg)
+    workspace = TrainStudentWorkspace(cfg,output_dir=cfg.output_dir)
     workspace.run()
 
 if __name__ == "__main__":

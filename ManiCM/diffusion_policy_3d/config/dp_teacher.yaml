@@ -25,7 +25,12 @@ policy:
   use_up_condition: true
   
   diffusion_step_embed_dim: 128
-  down_dims: [256,512,1024]
+  # down_dims: [256,512,1024]
+  down_dims:
+  - 512
+  - 1024
+  - 2048
+
   # crop_shape: [76,76]
   # encoder_output_dim: 64
   horizon: ${horizon}
@@ -87,17 +92,17 @@ ema:
 
 dataloader:
   batch_size: 4096 #128
-  num_workers: 40 #32
+  num_workers: 64
   shuffle: True
   pin_memory: True
-  persistent_workers: False
+  persistent_workers: True #False
 
 val_dataloader:
   batch_size: 4096 #128
-  num_workers: 40 #32
+  num_workers: 64
   shuffle: False
   pin_memory: True
-  persistent_workers: False
+  persistent_workers: True #False
 
 optimizer:
   _target_: torch.optim.AdamW
@@ -124,13 +129,13 @@ training:
   max_val_steps: null
   tqdm_interval_sec: 1.0
 
-output_dir: /mnt/home/SongJiaqi/Documents/ManiCM/ManiCM/outputs/dp_teacher/square #outputs/dp_teacher/square
+output_dir: /mnt/home/SongJiaqi/Documents/ManiCM/ManiCM/outputs/dp_teacher/square-large #outputs/dp_teacher/square
 
 logging:
   group: ${exp_name}
   id: null
-  mode: online
-  name: DPTeacher # ${exp_name}
+  mode: offline
+  name: DPTeacher-bz4096-dim2048 # ${exp_name}
   project: ManiCM-DPTeacher
   resume: False
   tags:
