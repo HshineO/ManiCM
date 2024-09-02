@@ -183,9 +183,16 @@ class TrainDPTeacherWorkspace:
                 step_log = dict()
                 # ========= train for this epoch ==========
                 train_losses = list()
+                
                 with tqdm.tqdm(train_dataloader, desc=f"Training epoch {self.epoch}", 
                         leave=False, mininterval=cfg.training.tqdm_interval_sec) as tepoch:
+                    print("epoch start!")
+                    t_estart = time.time()
                     for batch_idx, batch in enumerate(tepoch):
+                        if batch_idx == 0:
+                            print("batch start!")
+                            t_bstart = time.time()
+                        
                         t1 = time.time()
                         # device transfer
                         batch = dict_apply(batch, lambda x: x.to(device, non_blocking=True))
@@ -226,6 +233,7 @@ class TrainDPTeacherWorkspace:
                         
                         if verbose:
                             print(f"total one step time: {t2-t1:.3f}")
+                            print(f"dataload time: {t_bstart-t_estart:.3f}")
                             print(f" compute loss time: {t1_2-t1_1:.3f}")
                             print(f" step optimizer time: {t1_3-t1_2:.3f}")
                             print(f" update ema time: {t1_4-t1_3:.3f}")
@@ -266,15 +274,42 @@ class TrainDPTeacherWorkspace:
                 
                     
                 # run validation
+                t_time = 0
+                count = 0
                 if (self.epoch % cfg.training.val_every) == 0 and RUN_VALIDATION:
                     with torch.no_grad():
                         val_losses = list()
+                        val_mse_error = list()
                         with tqdm.tqdm(val_dataloader, desc=f"Validation epoch {self.epoch}", 
                                 leave=False, mininterval=cfg.training.tqdm_interval_sec) as tepoch:
                             for batch_idx, batch in enumerate(tepoch):
                                 batch = dict_apply(batch, lambda x: x.to(device, non_blocking=True))
                                 loss, loss_dict = self.model.compute_loss(batch)
-                                val_losses.append(loss)
+                                
+                                if (self.epoch % cfg.training.val_sample_every) == 0: # 每多少个epoch进行一次验证集的采样验证，生成action计算mse
+                                    obs_dict = batch['obs']
+                                    gt_action = batch['action']
+
+                                            
+                                    start_time = time.time()
+                                    result = policy.predict_action(obs_dict)
+                                    t = time.time() - start_time
+
+                                    t_time += t
+                                    count += 1
+                                            
+
+                                    pred_action = result['action_pred']
+                                    mse = torch.nn.functional.mse_loss(pred_action, gt_action)
+
+
+                                    val_losses.append(loss)
+                                    val_mse_error.append(mse.item())
+                                    del obs_dict
+                                    del gt_action
+                                    del result
+                                    del pred_action
+                                    del mse
                                 if (cfg.training.max_val_steps is not None) \
                                     and batch_idx >= (cfg.training.max_val_steps-1):
                                     break
@@ -282,8 +317,17 @@ class TrainDPTeacherWorkspace:
                             val_loss = torch.mean(torch.tensor(val_losses)).item()
                             # log epoch average validation loss
                             step_log['val_loss'] = val_loss
+                        if len(val_mse_error) > 0:
+                            val_mse_error = torch.mean(torch.tensor(val_mse_error)).item()
+                            step_log['val_mse_error'] = val_mse_error
+
+                            val_avg_inference_time = t_time / count
+                            step_log['val_avg_inference_time'] = val_avg_inference_time
+
 
                 # run diffusion sampling on a training batch
+                t_time = 0
+                count = 0
                 if (self.epoch % cfg.training.sample_every) == 0:
                     with torch.no_grad():
                         # sample trajectory from training set, and evaluate difference

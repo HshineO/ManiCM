@@ -99,14 +99,14 @@ ema:
   max_value: 0.9999
 
 dataloader:
-  batch_size: 128 #4096
+  batch_size: 128 #128 #4096
   num_workers: 8 #100
   shuffle: True
   pin_memory: True
   persistent_workers: False
 
 val_dataloader:
-  batch_size: 128 # 4096
+  batch_size: 128 #128 # 4096
   num_workers: 8 #100
   shuffle: False
   pin_memory: True
@@ -135,6 +135,7 @@ training:
   checkpoint_every: 50 #200
   val_every: 50 #1
   sample_every: 50 #5
+  val_sample_every: 50
   max_train_steps: null
   max_val_steps: null
   tqdm_interval_sec: 1.0
@@ -147,7 +148,7 @@ logging:
   mode: online
   name: CMStudent-bz128
   project: ManiCM-CMStudent
-  resume: False
+  resume: True #False
   tags:
   - manicm
   - robomimic
