@@ -351,25 +351,31 @@ class TrainDPTeacherWorkspace:
             if key in payload['pickles']:
                 self.__dict__[key] = dill.loads(payload['pickles'][key])
 
-    def eval(self):
+    def eval(self,output_dir:str,checkpoint_path:str = None):
         # load the latest checkpoint
         
         cfg = copy.deepcopy(self.cfg)
-        
-        lastest_ckpt_path = self.get_checkpoint_path(tag="latest")
-        if lastest_ckpt_path.is_file():
-            cprint(f"Resuming from checkpoint {lastest_ckpt_path}", 'magenta')
-            self.load_checkpoint(path=lastest_ckpt_path)
 
-        payload = torch.load(open(lastest_ckpt_path, 'rb'), pickle_module=dill)
-        self.load_payload(payload, exclude_keys=None, include_keys=None)
+        if checkpoint_path is None:
+            lastest_ckpt_path = self.get_checkpoint_path(tag="latest")
+            if lastest_ckpt_path.is_file():
+                cprint(f"Resuming from checkpoint {lastest_ckpt_path}", 'magenta')
+                self.load_checkpoint(path=lastest_ckpt_path)
+                payload = torch.load(open(lastest_ckpt_path, 'rb'), pickle_module=dill)
+                self.load_payload(payload, exclude_keys=None, include_keys=None)
+        else :
+            cprint(f"Resuming from checkpoint {checkpoint_path}", 'magenta')
+            self.load_checkpoint(path=checkpoint_path)
+            payload = torch.load(open(checkpoint_path, 'rb'), pickle_module=dill)
+            self.load_payload(payload, exclude_keys=None, include_keys=None)
     
 
         # configure env
         env_runner: BaseImageRunner
         env_runner = hydra.utils.instantiate(
             cfg.task.env_runner,
-            output_dir=self.output_dir)
+            output_dir = output_dir #self.output_dir
+            )
         print(type(env_runner))
         assert isinstance(env_runner, BaseImageRunner)
         policy = self.model

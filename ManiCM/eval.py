@@ -26,10 +26,12 @@ OmegaConf.register_new_resolver("eval", eval, replace=True)
 def main(cfg):
 
     cfg.policy.num_inference_steps = 100  # DDIM steps
+    cfg.task.env_runner.max_steps = 400
     # print(cfg.env_runner)
 
     workspace = TrainDPTeacherWorkspace(cfg,output_dir=cfg.output_dir)
-    workspace.eval()
+    workspace.eval(output_dir='/home/clear/ManiCM/ManiCM/outputs/dp_teacher/square',
+                   checkpoint_path='/home/clear/ManiCM/ManiCM/latest.ckpt')
 
 if __name__ == "__main__":
     main()

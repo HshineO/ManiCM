@@ -124,7 +124,7 @@ training:
   max_val_steps: null
   tqdm_interval_sec: 1.0
 
-output_dir: /mnt/home/SongJiaqi/Documents/ManiCM/ManiCM/outputs/dp_teacher/square #outputs/dp_teacher/square
+output_dir: /home/clear/ManiCM/ManiCM/outputs/dp_teacher/square # /mnt/home/SongJiaqi/Documents/ManiCM/ManiCM/outputs/dp_teacher/square #
 
 logging:
   group: ${exp_name}

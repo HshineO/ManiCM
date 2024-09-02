@@ -21,7 +21,8 @@ shape_meta: &shape_meta
 
 task_name: &task_name square
 dataset_type: &dataset_type ph
-dataset_path: &dataset_path /mnt/home/SongJiaqi/Data/robomimic/square_abs/image_abs.hdf5 # /media/clear/HP ZHAN SSD/robomimic/datasets/${task.task_name}/${task.dataset_type}/image_abs.hdf5
+dataset_path: &dataset_path /home/clear/consistency-policy-sjq/dataset/robomimic/datasets/square/ph/image_abs.hdf5 
+ # /mnt/home/SongJiaqi/Data/robomimic/square_abs/image_abs.hdf5 
 abs_action: &abs_action True
 
 #past_action_visible: True
